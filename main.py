@@ -1,7 +1,10 @@
 import tkinter as tk
 import cv2
 from tkinter import filedialog
-
+from PIL import Image, ImageTk
+from ImageCanvas import ImageCanvas
+import numpy as np
+image:np.ndarray = None
 root = tk.Tk()
 root.geometry("1700x844")
 root.title("Three Pane Layout")
@@ -26,15 +29,46 @@ tk.Label(frame1, text="Left Menu", bg="lightblue").pack(pady=10)
 tk.Label(frame2, text="Canvas Area", bg="white").pack(pady=10)
 tk.Label(frame3, text="Right Menu", bg="lightgreen").pack(pady=10)
 
+canvas1 = ImageCanvas(frame2)
 #Frame 1
-button = tk.Button(frame1, text="Import Image")
 def importImageClick(event):
+    global image
     filename = filedialog.askopenfilename(
     title="Select an Image File",
     filetypes=[("Image Files", "*.png;*.jpg;*.jpeg;*.bmp;*.gif"),  # Include supported image formats
                ("All Files", "*.*")]  # Option to show all files
     )
-    cv2.imread(filename)
+    image = cv2.imread(filename)
+    if filename:  # Check if a file was selected
+        image = cv2.imread(filename)
+        if image is not None:  # Check if the image was successfully read
+            canvas1.show_image(image)
+        else:
+            print("Failed to load image. Please select a valid image file.")
+    else:
+        print("No file selected.")
+        
+
+label1 = tk.Label(frame2, text="Image 1", background="white")
+label1.pack()
+button = tk.Button(frame2, text="Import Image")
 button.bind("<ButtonRelease>", importImageClick)
 button.pack()
+canvas1.pack()
+
+
+button = tk.Button(frame1, text="Gray scale")
+def convertGrayScale(e):
+    global image
+    image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    canvas1.show_image(image)
+button.bind("<ButtonRelease>",convertGrayScale)
+button.pack()
+
+button_save = tk.Button(frame1, text="Save")
+def save(e):
+    global image
+    cv2.imwrite("Saved img.jpg",image)
+button_save.bind("<ButtonRelease>", save)
+button_save.pack()
 root.mainloop()

@@ -4,6 +4,8 @@ from tkinter import filedialog
 from PIL import Image, ImageTk
 from ImageCanvas import ImageCanvas
 import numpy as np
+import os
+
 image:np.ndarray = None
 root = tk.Tk()
 root.geometry("1700x844")
@@ -35,8 +37,9 @@ canvas1 = ImageCanvas(frame2)
 #Frame 1
 def importImageClick():
     global image
+    my_directory = os.path.dirname(os.path.abspath(__file__))
     filename = filedialog.askopenfilename(
-    title="Select an Image File",
+    title="Select an Image File",initialdir=my_directory,
     filetypes=[("Image Files", "*.png;*.jpg;*.jpeg;*.bmp;*.gif"),  # Include supported image formats
                ("All Files", "*.*")]  # Option to show all files
     )
@@ -47,6 +50,7 @@ def importImageClick():
             canvas1.show_image(image)
         else:
             print("Failed to load image. Please select a valid image file.")
+        filename.close()
     else:
         print("No file selected.")
         
@@ -67,7 +71,18 @@ button.pack()
 
 def save():
     global image
-    cv2.imwrite("Saved img.jpg",image)
+    my_directory = os.path.dirname(os.path.abspath(__file__))
+    filename = filedialog.asksaveasfilename(
+        title="Save image file",
+        initialdir=my_directory,
+        initialfile="jogi ganteng.jpg",
+        filetypes=[("Image Files", "*.jpg;"),  # Include supported image formats
+                   ("All Files", "*.*")]  # Option to show all files
+    )
+    if filename:
+        cv2.imwrite(filename, image)
+    
+    
 button_save = tk.Button(frame1, text="Save", command=save)
 button_save.pack()
 

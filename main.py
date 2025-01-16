@@ -29,9 +29,11 @@ tk.Label(frame1, text="Left Menu", bg="lightblue").pack(pady=10)
 tk.Label(frame2, text="Canvas Area", bg="white").pack(pady=10)
 tk.Label(frame3, text="Right Menu", bg="lightgreen").pack(pady=10)
 
+tk.Scale(frame1, from_=0, to=100, orient="horizontal").pack(pady=10)
+
 canvas1 = ImageCanvas(frame2)
 #Frame 1
-def importImageClick(event):
+def importImageClick():
     global image
     filename = filedialog.askopenfilename(
     title="Select an Image File",
@@ -51,24 +53,29 @@ def importImageClick(event):
 
 label1 = tk.Label(frame2, text="Image 1", background="white")
 label1.pack()
-button = tk.Button(frame2, text="Import Image")
-button.bind("<ButtonRelease>", importImageClick)
+button = tk.Button(frame2, text="Import Image", command=importImageClick)
 button.pack()
 canvas1.pack()
 
 
-button = tk.Button(frame1, text="Gray scale")
-def convertGrayScale(e):
+def convertGrayScale():
     global image
     image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     canvas1.show_image(image)
-button.bind("<ButtonRelease>",convertGrayScale)
+button = tk.Button(frame1, text="Gray scale",command=convertGrayScale)
 button.pack()
 
-button_save = tk.Button(frame1, text="Save")
-def save(e):
+def save():
     global image
     cv2.imwrite("Saved img.jpg",image)
-button_save.bind("<ButtonRelease>", save)
+button_save = tk.Button(frame1, text="Save", command=save)
 button_save.pack()
+
+def notOperation():
+    global image
+    image = cv2.bitwise_not(image)
+    canvas1.show_image(image)
+
+button_negative = tk.Button(frame1, text="Negative Transformation", command=notOperation)
+button_negative.pack()
 root.mainloop()

@@ -44,10 +44,16 @@ style.configure("TCheckbutton",
                 font = ("Arial", 12),
                 margin = (0,10,0,0)
                 )
-
+style.configure("TRadiobutton",
+                foreground = "white",
+                background = "lightblue",
+                font = ("Arial", 12),
+                margin = (0,10,0,0)
+                )
 sepia = tk.BooleanVar()
 cyanotype = tk.BooleanVar()
 vignette = tk.BooleanVar()
+compress_type = tk.StringVar()
 root.state("zoomed")
 root.title("Three Pane Layout")
 
@@ -75,12 +81,26 @@ def importImageClick():
     else:
         print("No file selected.")
 def save():
+    file_types = [
+        ("PNG files", "*.png"),
+        ("JPG files", "*.jpg"),
+        ("All files", "*.*")
+    ]
+    path = None
+    compression_type = compress_type.get()
+    if compression_type == "None":
+        pass    
+    elif compression_type == "DCT":
+        file_types.pop(0)
+    else:
+        file_types.pop(1)
+    
     path = filedialog.asksaveasfilename(
     defaultextension=".png", 
-    filetypes=[("PNG files", "*.png"), ("JPG files", "*.jpg"), ("All files", "*.*")]
-)
+    filetypes=file_types
+    )
     if path:
-        canvas1.save(path)
+        canvas1.save(path, compression_type)
 def notOperation():
     global image
     image = cv2.bitwise_not(image)
@@ -237,6 +257,21 @@ label1.pack()
 button = ttk.Button(frame2, text="Import Image", command=importImageClick)
 button.pack()
 canvas1.pack()
+label_compress = ttk.Label(frame2, text="Compression type")
+label_compress.pack()
+frame_compress = tk.Frame(frame2, background="lightblue")
+frame_compress.columnconfigure(0, weight=1, pad=10)
+frame_compress.columnconfigure(1, weight=1, pad=10)
+frame_compress.columnconfigure(2, weight=1, pad=10)
+radio_compressNone = ttk.Radiobutton(frame_compress, text="None", variable=compress_type, value="None")
+radio_compressNone.grid(column=0, row=0)
+radio_compressDCT = ttk.Radiobutton(frame_compress, text="DCT", variable=compress_type, value="DCT")
+radio_compressDCT.grid(column=1, row=0)
+radio_compressRLE = ttk.Radiobutton(frame_compress, text="RLE", variable=compress_type, value="RLE")
+radio_compressRLE.grid(column=2, row=0)
+frame_compress.pack()
+compress_type.set("None")
+
 button_save = ttk.Button(frame2, text="Save", command=save)
 button_save.pack()
 

@@ -113,14 +113,23 @@ class ImageCanvas(tk.Canvas):
             self.config(width=new_width, height=new_height) 
             self.create_image(new_width/2, new_height/2, anchor= tk.CENTER, image = self.shown_image)
             
-    def save(self, path):
+    def save(self, path, compression_type):
         image_array = ImageTk.getimage(self.shown_image)
         image_cv2 = np.array(image_array)
+        image_cv2 = cv2.resize(image_cv2, (int(image_cv2.shape[1]*self.ratio), int(image_cv2.shape[0]*self.ratio)))
         if self.isGrayScale:
             image_cv2 = cv2.cvtColor(image_cv2, cv2.COLOR_RGB2GRAY)
         else:
             image_cv2 = cv2.cvtColor(image_cv2, cv2.COLOR_RGB2BGR)
-        cv2.imwrite(path, image_cv2)
+        if compression_type == "None":
+            cv2.imwrite(path, image_cv2)
+        elif compression_type == "DCT":
+            image_cv2 = self.compressDCT(image_cv2)
+            cv2.imwrite(path, image_cv2)
+        elif compression_type == "RLE":
+            image_cv2 = self.compressRLE(image_cv2)
+            cv2.imwrite(path, image_cv2)
+            
     
     def __repr__(self):
         return (
@@ -158,5 +167,112 @@ class ImageCanvas(tk.Canvas):
             for i in range(3):
                 stretched[:,:,i] = helper(image[:,:,i])
             return stretched
+    def compressDCT(self, image):
+        # Function to create a mask through zigzag scanning
+        def z_scan_mask(C, N):
+            mask = np.zeros((N, N))
+            mask_m, mask_n = 0, 0
+            for i in range(C):
+                if i == 0:
+                    mask[mask_m, mask_n] = 1
+                else:
+                    if (mask_m + mask_n) % 2 == 0:
+                        mask_m -= 1
+                        mask_n += 1
+                        if mask_m < 0:
+                            mask_m += 1
+                        if mask_n >= N:
+                            mask_n -= 1
+                    else:
+                        mask_m += 1
+                        mask_n -= 1
+                        if mask_m >= N:
+                            mask_m -= 1
+                        if mask_n < 0:
+                            mask_n += 1
+                    mask[mask_m, mask_n] = 1
+            return mask
+
+        # Adaptive quantization function
+        def adaptive_quantization(coeff, N):
+            quant_matrix = np.ones((N, N)) * 10
+            quant_matrix[0, 0] = 5  # Keep DC coefficient more accurate
+            return np.round(coeff / quant_matrix) * quant_matrix
+
+        # Function to apply compression using DCT and mask generated
+        def compress(img, mask, N):
+            img_dct = np.zeros_like(img)
+
+            # Process each color channel
+            for c in range(img.shape[2]):
+                # Iterate through the image in N x N blocks
+                for m in range(0, img.shape[0], N):
+                    for n in range(0, img.shape[1], N):
+                        block = img[m:m+N, n:n+N, c]
+                        coeff = cv2.dct(np.float32(block))
+
+                        # Apply the mask (keeping significant coefficients)
+                        coeff *= mask
+
+                        # Apply adaptive quantization to preserve details
+                        quantized_coeff = adaptive_quantization(coeff, N)
+
+                        # Apply inverse DCT and clip values to avoid overflow
+                        iblock = cv2.idct(quantized_coeff)
+                        iblock = np.clip(iblock, 0, 255)
+
+                        # Place the compressed block back in the image
+                        img_dct[m:m+N, n:n+N, c] = iblock
+
+            return img_dct
+
+        # Set smaller block size (N=8 or N=16) and higher coefficient retention
+        N = 8  # Try smaller N (e.g., 8 or 16)
+        C = 50  # Keep more coefficients, e.g., 50% of the coefficients
+
+        # Apply compression to the RGB image
+        compressed_image = compress(image, z_scan_mask(C, N), N)
+
+        return compressed_image
+    def compressRLE(self, image):
+        def run_length_encoding(image):
+            # Flatten the image
+            flattened_image = image.flatten()
             
+            # List to store RLE data (value, length)
+            rle = []
             
+            # Initialize the first value and the count
+            prev_val = flattened_image[0]
+            count = 1
+            
+            # Iterate over the flattened image array
+            for i in range(1, len(flattened_image)):
+                if flattened_image[i] == prev_val:
+                    count += 1
+                else:
+                    rle.append((prev_val, count))
+                    prev_val = flattened_image[i]
+                    count = 1
+            
+            # Append the last run
+            rle.append((prev_val, count))
+            
+            return rle
+
+        # Function to apply Run Length Decoding (RLD)
+        def run_length_decoding(rle, shape):
+            # Create an empty array with the same shape as the original image
+            decoded_image = np.zeros(np.prod(shape), dtype=np.uint8)
+            
+            # Rebuild the image from the RLE data
+            idx = 0
+            for value, count in rle:
+                decoded_image[idx:idx+count] = value
+                idx += count
+            
+            # Reshape the array back to the original shape
+            return decoded_image.reshape(shape)
+        
+        compressed = run_length_encoding(image)
+        return run_length_decoding(compressed, image.shape)

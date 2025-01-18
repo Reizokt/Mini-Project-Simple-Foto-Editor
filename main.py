@@ -5,7 +5,9 @@ from tkinter import ttk
 from PIL import Image, ImageTk
 from ImageCanvas import ImageCanvas
 import numpy as np
+from sklearn.cluster import KMeans
 image:np.ndarray = None
+crop = False
 border_types = {
     "Border Replicate": cv2.BORDER_REPLICATE,
     "Border Reflect": cv2.BORDER_REFLECT,
@@ -50,6 +52,21 @@ style.configure("TRadiobutton",
                 font = ("Arial", 12),
                 margin = (0,10,0,0)
                 )
+style.configure(
+    "TCombobox",
+    foreground="black",  # Text color
+    background="lightblue",  # Background of the entry field
+    font=("Arial", 20, "bold"),
+    padding = (10,10,10,10),
+    margin = (0,10,0,0)
+)
+# Configure the dropdown list
+style.map(
+    "TCombobox",
+    fieldbackground=[("readonly", "lightblue")],  # Background of the entry field (readonly)
+    background=[("readonly", "lightblue")], 
+    foreground=[("readonly", "white")]# Background of the dropdown menu
+)
 sepia = tk.BooleanVar()
 cyanotype = tk.BooleanVar()
 vignette = tk.BooleanVar()
@@ -57,14 +74,17 @@ compress_type = tk.StringVar()
 root.state("zoomed")
 root.title("Three Pane Layout")
 
+def change_crop_state():
+    global crop
+    crop = not crop
 def color_manipulation():
     global image
-    canvas1.color_manipulation = (slider_color_red.get()/100, slider_color_green.get()/100, slider_color_blue.get()/100)
-    canvas1.show_image(image)
+    canvas.color_manipulation = (slider_color_red.get()/100, slider_color_green.get()/100, slider_color_blue.get()/100)
+    canvas.show_image(image)
 def convertGrayScale():
     global image
-    canvas1.isGrayScale = not canvas1.isGrayScale
-    canvas1.show_image(image)
+    canvas.isGrayScale = not canvas.isGrayScale
+    canvas.show_image(image)
 def importImageClick():
     global image
     filename = filedialog.askopenfilename(
@@ -75,7 +95,7 @@ def importImageClick():
     if filename:  # Check if a file was selected
         image = cv2.imread(filename)
         if image is not None:  # Check if the image was successfully read
-            canvas1.show_image(image)
+            canvas.show_image(image)
         else:
             print("Failed to load image. Please select a valid image file.")
     else:
@@ -100,42 +120,42 @@ def save():
     filetypes=file_types
     )
     if path:
-        canvas1.save(path, compression_type)
+        canvas.save(path, compression_type)
 def notOperation():
     global image
     image = cv2.bitwise_not(image)
-    canvas1.show_image(image)
+    canvas.show_image(image)
 
 def onRotateChange(value):
     global image
     angle = int(value)
-    canvas1.rotation_degree = angle
-    canvas1.show_image(image)
-    print(repr(canvas1))
+    canvas.rotation_degree = angle
+    canvas.show_image(image)
+    print(repr(canvas))
 
 def flipHorizontal():
     global image
     image = cv2.flip(image, 1)
-    canvas1.show_image(image)
+    canvas.show_image(image)
 
 def flipVertical():
     global image
     image = cv2.flip(image, 0)
-    canvas1.show_image(image)
+    canvas.show_image(image)
 
 def flipDiagonal():
     global image
     image = cv2.flip(image, 1)
     image = cv2.flip(image, 0)
-    canvas1.show_image(image)
+    canvas.show_image(image)
 
 def translate(e):
     global image
     try:
         entry_x = entry_translatex.get() if entry_translatex.get() != "" else 0
         entry_y = entry_translatey.get() if entry_translatey.get() != "" else 0
-        canvas1.translate = (int(entry_x), int(entry_y))
-        canvas1.show_image(image)
+        canvas.translate = (int(entry_x), int(entry_y))
+        canvas.show_image(image)
     except ValueError:
         print("Invalid input for translate")
 
@@ -146,14 +166,14 @@ def scale(e):
         entry_y = entry_scalingy.get() if entry_scalingy.get() != "" else 100
         entry_x = int(entry_x)
         entry_y = int(entry_y)
-        canvas1.resize = (entry_x/100, entry_y/100)
-        canvas1.show_image(image)
+        canvas.resize = (entry_x/100, entry_y/100)
+        canvas.show_image(image)
     except ValueError:
         print("Invalid input for scale")
 
 def color_filter():
     global image
-    color_filters = canvas1.color_filters
+    color_filters = canvas.color_filters
     # Define the filters and their corresponding variables in a list
     filter_options = [
         ("sepia", sepia),
@@ -169,34 +189,33 @@ def color_filter():
             color_filters.remove(filter_name)
 
     # Update the canvas property
-    canvas1.color_filters = color_filters
-    canvas1.show_image(image)
+    canvas.color_filters = color_filters
+    canvas.show_image(image)
 
 def brightnessChange(event):
     global image
     brightness = event.widget.get()
-    canvas1.brightness = float(brightness)
-    canvas1.show_image(image)
+    canvas.brightness = float(brightness)
+    canvas.show_image(image)
 
 def contrastChange(event):
     global image
     contrast = event.widget.get()
-    canvas1.contrast = float(contrast)
-    canvas1.show_image(image)
+    canvas.contrast = float(contrast)
+    canvas.show_image(image)
 def borderChange(event):
     global image
     border = event.widget.get()
-    canvas1.border = border_types[border]
-    canvas1.show_image(image)
-
+    canvas.border = border_types[border]
+    canvas.show_image(image)
 def paddingChange(event):
     global image
     padding = event.widget.get()
-    canvas1.padding = int(padding)
-    canvas1.show_image(image)
+    canvas.padding = int(padding)
+    canvas.show_image(image)
 def contrast_stretching():
-    canvas1.contrast_stretch = not canvas1.contrast_stretch
-    canvas1.show_image(image)
+    canvas.contrast_stretch = not canvas.contrast_stretch
+    canvas.show_image(image)
 def binaryOperation(operation):
     global image
     operations = {
@@ -208,23 +227,163 @@ def binaryOperation(operation):
     if operation == "NOT":
         if image is None: return
         image = operations[operation](image)
-        canvas1.show_image(image)
+        canvas.show_image(image)
         return
     filename = filedialog.askopenfilename(
     title="Select the second Image File",
     filetypes=[("Image Files", "*.png;*.jpg;*.jpeg;*.bmp;*.gif"),  # Include supported image formats
                ("All Files", "*.*")]  # Option to show all files
     )
-    if filename:  # Check if a file was selected
+    if filename:
         image2 = cv2.imread(filename)
-        if image2 is not None:
+        if operation == "BLEND":
+            canvas.image_blend = image2
+            canvas.show_image(image)
+            label_blend.pack(after=frame_binary)
+            alpha_slider.pack(after=label_blend)
+            return
+        elif image2 is not None:
             image2 = cv2.resize(image2, (image.shape[1], image.shape[0]))
             image = operations[operation](image, image2)
-            canvas1.show_image(image)
+            canvas.show_image(image)
         else:
             print("Failed to load image. Please select a valid image file.")
     else:
         print("No file selected.")
+def start_crop(event):
+    global start_x, start_y, rect_id, crop
+    if not crop : return
+    start_x, start_y = event.x, event.y
+    rect_id = canvas.create_rectangle(start_x, start_y, start_x, start_y, outline="red")
+
+def draw_crop(event):
+    global rect_id, crop
+    if not crop : return
+    if rect_id:
+        canvas.coords(rect_id, start_x, start_y, event.x, event.y)
+
+def end_crop(event):
+    global start_x, start_y, image, crop
+    if not crop : return
+    if rect_id and image is not None:
+        # Get canvas coordinates of the cropping rectangle
+        x1, y1, x2, y2 = canvas.coords(rect_id)
+        
+        # Convert canvas coordinates to image coordinates by accounting for canvas scaling
+        scale_x = image.shape[1] / canvas.winfo_width()  # Scaling factor for x
+        scale_y = image.shape[0] / canvas.winfo_height()  # Scaling factor for y
+        
+        # Adjust coordinates based on scaling
+        x1, y1, x2, y2 = int(x1 * scale_x), int(y1 * scale_y), int(x2 * scale_x), int(y2 * scale_y)
+        # Ensure coordinates are within image bounds
+        x1, y1 = max(0, x1), max(0, y1)
+        x2, y2 = min(image.shape[1], x2), min(image.shape[0], y2)
+
+        if x1 < x2 and y1 < y2:
+            print(image)
+            image = canvas.getTransformedImage()[y1:y2, x1:x2]
+            canvas.show_image(image)
+            resetTransformations()
+            crop = not crop
+        else:
+            print("Invalid crop area. Please try again.")
+def resetTransformations():
+    global image
+    canvas.resetTransformation()
+    entry_translatex.delete(0, tk.END)
+    entry_translatey.delete(0, tk.END)
+    entry_scalingx.delete(0, tk.END)
+    entry_scalingy.delete(0, tk.END)
+    slider_rotate.set(0)
+    alpha_slider.set(0.5)
+    label_blend.pack_forget()
+    alpha_slider.pack_forget()
+    canvas.show_image(image)
+
+def alphaChange(event):
+    global image
+    canvas.image_blend_alpha = event.widget.get()
+    canvas.show_image(image)
+
+def fourier_transform():
+    global image, rotated_image
+    if image is None:
+        print("No image to transform. Please import an image first.")
+        return
+    
+    try:
+        # Get the selection (FFT or DFT)
+        transform_type = select_box_fourier.get()
+        
+        # Convert the image to grayscale for simplicity in Fourier Transform
+        gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        
+        if transform_type == "FFT":
+            f_transform = np.fft.fft2(gray_image)
+            f_shift = np.fft.fftshift(f_transform)  # Center the low frequencies
+            image = 20 * np.log(np.abs(f_shift))
+            
+            
+        elif transform_type == "DFT":
+            dft = cv2.dft(np.float32(gray_image), flags=cv2.DFT_COMPLEX_OUTPUT)
+            dft_shift = np.fft.fftshift(dft)
+            image = 20 * np.log(cv2.magnitude(dft_shift[:, :, 0], dft_shift[:, :, 1]))
+        
+        else:
+            print("Invalid transform type selected.")
+            return
+        
+        # Normalize and display the result
+        normalized_spectrum = cv2.normalize(image, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+        image = cv2.cvtColor(normalized_spectrum, cv2.COLOR_GRAY2BGR)
+        canvas.show_image(image)
+    except Exception as e:
+        print(f"An error occurred during Fourier Transform: {e}")
+def apply_blur_filter():
+    global image
+    canvas.blur_filter = select_box_blur.get()
+    canvas.show_image(image)
+
+def applyEdgeDetection():
+    global image
+    edge_detection = select_box_edge.get()
+    canvas.edge_detection = edge_detection
+    canvas.show_image(image)
+def apply_histogram_equalization():
+    global image
+    canvas.histogram = not canvas.histogram
+    canvas.show_image(image)
+def applySegmentation():
+    global image
+    segmentation = select_box_segmentation.get()
+    if segmentation == "K-means":
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        pixels = image.reshape((-1, 1))  # Each pixel is a 1D vector (grayscale intensity)
+        kmeans = KMeans(n_clusters=2, random_state=0).fit(pixels)  # We choose k=2 for simplicity
+        Kmean_image = kmeans.labels_.reshape(image.shape)
+        kmeans_image = (Kmean_image * 255).astype(np.uint8)
+        image = kmeans_image
+        canvas.show_image(image)
+    if segmentation =="Thresholding":
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        _, thresholded_image = cv2.threshold(image, 127, 255, cv2.THRESH_BINARY)
+        image = thresholded_image
+        canvas.show_image(image)
+
+def applyRestore(method):
+    restorations = canvas.restoration
+    if method not in restorations:
+        restorations.append(method)
+    else:
+        restorations.remove(method)
+    canvas.restoration = restorations
+    canvas.show_image(image)
+
+def gammaChange(event):
+    global image
+    gamma = event.widget.get()
+    canvas.gamma = float(gamma)
+    canvas.show_image(image)
 # Configure grid layout
 root.grid_columnconfigure(0, weight=1)  # Left menu
 root.grid_columnconfigure(1, weight=2)  # Canvas
@@ -249,14 +408,17 @@ ttk.Label(frame1, text="Left Menu", font=("Arial", 20, "bold")).pack(pady=10)
 ttk.Label(frame2, text="Canvas Area", background="white").pack(pady=10)
 ttk.Label(frame3, text="Right Menu", background="lightgreen").pack(pady=10)
 
-canvas1 = ImageCanvas(frame2)
+canvas = ImageCanvas(frame2)
         
 
 label1 = ttk.Label(frame2, text="Image 1", background="white")
 label1.pack()
 button = ttk.Button(frame2, text="Import Image", command=importImageClick)
 button.pack()
-canvas1.pack()
+canvas.bind("<ButtonPress-1>", start_crop)
+canvas.bind("<B1-Motion>", draw_crop)
+canvas.bind("<ButtonRelease-1>", end_crop)
+canvas.pack()
 label_compress = ttk.Label(frame2, text="Compression type")
 label_compress.pack()
 frame_compress = tk.Frame(frame2, background="lightblue")
@@ -312,9 +474,6 @@ button_flipv.grid(row=0, column=1)
 button_flipd = ttk.Button(container_flip, image=button_flipd_icon, command=flipDiagonal)
 button_flipd.grid(row=0, column=2)
 container_flip.pack()
-
-
-    
 
 label_translate = ttk.Label(frame1, text="Translate", background="lightblue")
 label_translate.pack()
@@ -389,7 +548,16 @@ brightness_slider.bind("<ButtonRelease-1>", brightnessChange)
 brightness_slider.set(1.0)
 label_brightness.pack()
 brightness_slider.pack()
-        
+label_gamma = ttk.Label(frame1, text="Gamma: 1.0")
+gamma_slider = ttk.Scale(frame1,
+                        from_=0.1, to=3.0,
+                        orient=tk.HORIZONTAL, command=lambda value: label_gamma.config(text=f"Gamma: {float(value):.1f}"))
+gamma_slider.bind("<ButtonRelease-1>", gammaChange)
+gamma_slider.set(1.0)
+label_gamma.pack()
+gamma_slider.pack()
+
+
 # Contrast slider
 label_contrast = ttk.Label(frame1, text="Contrast:")
 contrast_slider = ttk.Scale(frame1, 
@@ -447,5 +615,85 @@ ttk.Button(frame_binary, text="OR", command=lambda : binaryOperation("OR")).grid
 ttk.Button(frame_binary, text="XOR", command=lambda : binaryOperation("XOR")).grid(column=2, row=0)
 ttk.Button(frame_binary, text="NOT", command=lambda : binaryOperation("NOT")).grid(column=3, row=0)
 frame_binary.pack()
+ttk.Button(frame_binary, text="BLEND", command=lambda : binaryOperation("BLEND")).grid(column=0, row=1, columnspan=4)
+label_blend = ttk.Label(frame3, text="Image Blend Alpha: 0.5")
+label_blend.pack_forget()
+alpha_slider = ttk.Scale(frame3, 
+                        from_=0, to=1,
+                        orient=tk.HORIZONTAL, command=lambda e: label_blend.config(text = f"Image Blend Alpha: {float(e):.2f}"))
+alpha_slider.bind("<ButtonRelease-1>", alphaChange)
+alpha_slider.set(0.5)
+alpha_slider.pack_forget()
 
+ttk.Label(frame3, text="Toggle crop", background="lightgreen").pack()
+button_crop = ttk.Button(frame3, text="Crop", command=change_crop_state)
+button_crop.pack()
+ttk.Label(frame3, text="Fourier Transform", background="lightgreen").pack()
+frame_fourier = tk.Frame(frame3, background="lightgreen")
+frame_fourier.columnconfigure(0, weight=1, pad=10)
+frame_fourier.columnconfigure(1, weight=1, pad=10)
+select_box_fourier = ttk.Combobox(frame_fourier,
+                            values=["FFT", "DFT"],
+                            state="readonly")
+select_box_fourier.set("FFT")
+select_box_fourier.grid(column=0, row=0)
+button_fourier = ttk.Button(frame_fourier, text="Apply", command=fourier_transform)
+button_fourier.grid(column=1, row=0)
+frame_fourier.pack()
+ttk.Label(frame3, text="Spatial Filter", background="lightgreen").pack()
+frame_blur = tk.Frame(frame3, background="lightgreen")
+frame_blur.columnconfigure(0, weight=1, pad=10)
+frame_blur.columnconfigure(1, weight=1, pad=10)
+select_box_blur = ttk.Combobox(frame_blur,
+                            values=["Mean Filter", "Gaussian Filter", "Median Filter","None"],
+                            state="readonly")
+select_box_blur.set("Mean Filter")
+select_box_blur.grid(column=0, row=0)
+button_blur = ttk.Button(frame_blur, text="Apply", command=apply_blur_filter)
+button_blur.grid(column=1, row=0)
+frame_blur.pack()
+
+ttk.Label(frame3, text="Edge Detection", background="lightgreen").pack()
+frame_edge = tk.Frame(frame3, background="lightgreen")
+frame_edge.columnconfigure(0, weight=1, pad=10)
+frame_edge.columnconfigure(1, weight=1, pad=10)
+select_box_edge = ttk.Combobox(frame_edge,
+                            values=["Sobel", "Laplacian", "Canny", "None"],
+                            state="readonly")
+select_box_edge.set("Sobel")
+select_box_edge.grid(column=0, row=0)
+button_edge = ttk.Button(frame_edge, text="Apply", command= applyEdgeDetection)
+button_edge.grid(column=1, row=0)
+frame_edge.pack()
+
+button_histogram = ttk.Button(frame3, text="Histogram Equalization", command=apply_histogram_equalization)
+button_histogram.pack()
+
+frame_segmentation = tk.Frame(frame3, background="lightgreen")
+frame_segmentation.columnconfigure(0, weight=1, pad=10)
+frame_segmentation.columnconfigure(1, weight=1, pad=10)
+select_box_segmentation = ttk.Combobox(frame_segmentation,
+                            values=["K-means", "Thresholding"],
+                            state="readonly")
+select_box_segmentation.set("K-means")
+select_box_segmentation.grid(column=0, row=0)
+button_segmentation = ttk.Button(frame_segmentation, text="Apply", command=applySegmentation)
+button_segmentation.grid(column=1, row=0)
+frame_segmentation.pack()
+
+label_image_restoration = ttk.Label(frame3, text="Image Restoration", background="lightgreen")
+label_image_restoration.pack()
+frame_image_restoration = tk.Frame(frame3, background="lightgreen")
+frame_image_restoration.columnconfigure(0, weight=1, pad=10)
+frame_image_restoration.columnconfigure(1, weight=1, pad=10)
+frame_image_restoration.columnconfigure(2, weight=1, pad=10)
+
+button_wiener = ttk.Button(frame_image_restoration, text="Wiener", command=lambda : applyRestore("Wiener"))
+button_wiener.grid(column=0, row=0)
+button_gaussian = ttk.Button(frame_image_restoration, text="Gaussian", command=lambda : applyRestore("Gaussian"))
+button_gaussian.grid(column=1, row=0)
+button_median = ttk.Button(frame_image_restoration, text="Inpainting", command=lambda : applyRestore("Inpainting"))
+button_median.grid(column=2, row=0)
+frame_image_restoration.pack()
+print(canvas.restoration)                       
 root.mainloop()

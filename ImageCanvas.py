@@ -3,12 +3,14 @@ from tkinter import Canvas
 import cv2
 from PIL import Image, ImageTk
 import numpy as np
+from scipy.signal import wiener
 class ImageCanvas(tk.Canvas):
     def __init__(self, master):
         self.width = 600
         self.height = 400
         Canvas.__init__(self, master=master, bg="white", width=self.width, height=self.height)
         self.shown_image = None
+        self.transformed_image = None
         self.ratio = 0
         self.rotation_degree = 0
         self.translate = (0,0)
@@ -21,32 +23,63 @@ class ImageCanvas(tk.Canvas):
         self.border = None
         self.padding = 0
         self.contrast_stretch = False
-
+        self.image_blend = None
+        self.image_blend_alpha = 0.5
+        self.blur_filter = None
+        self.edge_detection = None
+        self.histogram = False
+        self.restoration = []
+        self.gamma = 1
     def show_image(self, img=None):
         self.delete("all")
         image = img
         if img is None:
             print("No image to show")
             return
-        if self.isGrayScale:
-            image = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        else:
-            image = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        image = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        height, width = image.shape[0], image.shape[1]
+        if self.resize != (0,0):
+            image = cv2.resize(image, (int(width*self.resize[0]), int(height*self.resize[1])))
+            height, width = image.shape[0], image.shape[1]
+
         if self.rotation_degree != 0:
             image = Image.fromarray(image).rotate(self.rotation_degree)
             image = np.array(image)
-        height, width = image.shape[0], image.shape[1]
         if self.translate != (0,0):
             print(image)
             T = np.array([[1,0,self.translate[0]],[0,1,self.translate[1]]],dtype=np.float32)
             image = cv2.warpAffine(image, T, (width, height))
-        if self.resize != (0,0):
-            image = cv2.resize(image, (int(width*self.resize[0]), int(height*self.resize[1])))
-            height, width = image.shape[0], image.shape[1]
+        if self.image_blend is not None:
+            self.image_blend = cv2.cvtColor(self.image_blend, cv2.COLOR_BGR2RGB)
+            overlay = cv2.resize(self.image_blend, (width, height))
+            blended_b = (1.0 - self.image_blend_alpha) * image[:, :, 0] + self.image_blend_alpha * overlay[:, :, 0]
+            blended_g = (1.0 - self.image_blend_alpha) * image[:, :, 1] + self.image_blend_alpha * overlay[:, :, 1]
+            blended_r = (1.0 - self.image_blend_alpha) * image[:, :, 2] + self.image_blend_alpha * overlay[:, :, 2]
+            image = cv2.merge((blended_b, blended_g, blended_r)).astype(np.uint8)
+        if self.border != None:
+            if self.border == cv2.BORDER_CONSTANT:
+                image = cv2.copyMakeBorder(
+                    image,
+                    self.padding, self.padding, self.padding, self.padding,
+                    self.border,
+                    value=(0,0,0)
+                )
+            else:
+                image = cv2.copyMakeBorder(
+                    image,
+                    self.padding, self.padding, self.padding, self.padding,
+                    self.border
+                )
+        self.transformed_image = image
+        
+        if self.isGrayScale:
+            image = cv2.cvtColor(image,cv2.COLOR_RGB2GRAY)
         if self.color_manipulation != (1,1,1) and len(image.shape) == 3:
             image = np.clip(image * self.color_manipulation, 0, 255).astype(np.uint8)
         if self.contrast_stretch:
             image = self.contrast_stretching(image)
+        if self.gamma != 1:
+            image = self.gamma_correction(image)
         if len(self.color_filters) > 0:
             for filter in self.color_filters:
                 print("test2")
@@ -79,20 +112,25 @@ class ImageCanvas(tk.Canvas):
                 alpha=self.brightness,
                 beta=50 * (self.contrast - 1)
             )
-        if self.border != None:
-            if self.border == cv2.BORDER_CONSTANT:
-                image = cv2.copyMakeBorder(
-                    image,
-                    self.padding, self.padding, self.padding, self.padding,
-                    self.border,
-                    value=(0,0,0)
-                )
+        
+        if self.edge_detection is not None:
+            image = self.applyEdgeFilter(image, self.edge_detection)
+        if self.blur_filter is not None:
+            image = self.applyBlurFilter(image, self.blur_filter)
+        if self.histogram:
+            if self.isGrayScale:
+                image = cv2.equalizeHist(image)
             else:
-                image = cv2.copyMakeBorder(
-                    image,
-                    self.padding, self.padding, self.padding, self.padding,
-                    self.border
-                )
+                (red, green, blue) = cv2.split(image)
+                red = cv2.equalizeHist(red)
+                green = cv2.equalizeHist(green)
+                blue = cv2.equalizeHist(blue)
+                image = cv2.merge([red, green, blue])
+        if len(self.restoration) > 0:
+            print(self.restoration)
+            for restoration in self.restoration:
+                image = self.image_restoration(image, restoration)
+        height, width = image.shape[0], image.shape[1]
         ratio = height / width
         new_width = width
         new_height = height
@@ -106,12 +144,12 @@ class ImageCanvas(tk.Canvas):
             else:
                 new_height = self.height
                 new_width = int(new_height*width/height)
-            self.shown_image = cv2.resize(image, (new_width, new_height))
-            self.shown_image = ImageTk.PhotoImage(Image.fromarray(self.shown_image))
-            self.ratio = height/new_height
+        self.shown_image = cv2.resize(image, (new_width, new_height))
+        self.shown_image = ImageTk.PhotoImage(Image.fromarray(self.shown_image))
+        self.ratio = height/new_height
 
-            self.config(width=new_width, height=new_height) 
-            self.create_image(new_width/2, new_height/2, anchor= tk.CENTER, image = self.shown_image)
+        self.config(width=new_width, height=new_height) 
+        self.create_image(new_width/2, new_height/2, anchor= tk.CENTER, image = self.shown_image)
             
     def save(self, path, compression_type):
         image_array = ImageTk.getimage(self.shown_image)
@@ -276,3 +314,88 @@ class ImageCanvas(tk.Canvas):
         
         compressed = run_length_encoding(image)
         return run_length_decoding(compressed, image.shape)
+    def getTransformedImage(self):
+        return cv2.cvtColor(self.transformed_image, cv2.COLOR_RGB2BGR)
+    def resetTransformation(self):
+        self.transformed_image = None
+        self.rotation_degree = 0
+        self.translate = (0,0)
+        self.resize = (0,0)
+        self.image_blend = None
+        self.image_blend_alpha = 0.5
+    def applyBlurFilter(self, image, blur_filter):
+        filtered_image = None
+        if blur_filter == "Mean Filter":
+            # Mean Filter
+            kernel_mean = np.ones((5, 5), np.float32) / 25  # 5x5 mean kernel
+            filtered_image = cv2.filter2D(image, -1, kernel_mean)
+        elif blur_filter == "Gaussian Filter":
+            # Gaussian Filter
+            filtered_image = cv2.GaussianBlur(image, (5, 5), sigmaX=1)
+
+        elif blur_filter == "Median Filter":
+            # Median Filter
+            filtered_image = cv2.medianBlur(image, 5)  # Kernel size 5
+        
+        else:
+            print("Invalid filter type selected.")
+            return image
+        return filtered_image
+    def applyEdgeFilter(self, image, edge_filter):
+        if edge_filter == "None":
+            return image
+        if edge_filter == "Sobel":
+            sobel_horizontal = cv2.Sobel(image, cv2.CV_64F, 1, 0, ksize=3)
+            sobel_vertical = cv2.Sobel(image, cv2.CV_64F, 0, 1, ksize=3)
+            sobel_combined = cv2.magnitude(sobel_horizontal, sobel_vertical)
+            sobel_filtered = cv2.convertScaleAbs(sobel_combined)
+            return sobel_filtered.astype(np.uint8)
+        elif edge_filter == "Canny":
+            # Apply Canny edge detection
+            low_threshold = 50 
+            high_threshold = 150
+            canny_edges = cv2.Canny(image, low_threshold, high_threshold)
+            canny_edges_bgr = cv2.cvtColor(canny_edges, cv2.COLOR_GRAY2BGR)
+            return canny_edges_bgr.astype(np.uint8)
+        elif edge_filter == "Laplacian":
+            laplacian_filtered = cv2.Laplacian(image, cv2.CV_64F)
+            laplacian_filtered = cv2.convertScaleAbs(laplacian_filtered)
+            return laplacian_filtered.astype(np.uint8)
+    def image_restoration(self,image, restoration_type):
+        if restoration_type == "Wiener":
+            if self.isGrayScale:
+                # Convert to float (normalized)
+                image_float = image.astype(np.float32) / 255.0
+                filtered_image = wiener(image_float, (5, 5))
+                
+                # Convert back to uint8
+                filtered_image = np.clip(filtered_image * 255, 0, 255).astype(np.uint8)
+                return filtered_image
+            
+            # For color images (RGB)
+            filtered_image = np.zeros_like(image, dtype=np.float32)
+            for i in range(3):  # Apply Wiener filter to each channel
+                channel = image[:, :, i].astype(np.float32) / 255.0  # Normalize to [0, 1]
+                filtered_image[:, :, i] = wiener(channel, (5, 5))
+            
+            # Convert back to uint8
+            filtered_image = np.clip(filtered_image * 255, 0, 255).astype(np.uint8)
+            return filtered_image
+        if restoration_type =="Gaussian":
+            filtered_image = cv2.GaussianBlur(image, (5, 5), sigmaX=1)
+            return filtered_image
+        if restoration_type == "Inpainting":
+            # Create a mask (with 255 for the area you want to inpaint)
+            mask = np.zeros(image.shape[:2], dtype=np.uint8)
+
+            # Define the region to be inpainted (e.g., a square area from (100, 100) to (150, 150))
+            mask[100:150, 100:150] = 255  # Marking a region for inpainting
+
+            # Apply inpainting using the selected method
+            inpainted = cv2.inpaint(image, mask, inpaintRadius=3, flags=cv2.INPAINT_TELEA)
+            return inpainted
+    def gamma_correction(self, image):
+        image_normalized = image / 255.0
+        corrected_image = np.power(image_normalized, self.gamma)
+        corrected_image = np.uint8(corrected_image * 255)
+        return corrected_image

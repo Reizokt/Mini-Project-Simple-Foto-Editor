@@ -515,6 +515,7 @@ class ImageCanvas(tk.Canvas):
         print(f"Image shape: {image.shape}")
         print(f"Template shape: {image_template.shape}")
         return cv2.cvtColor(image_matched, cv2.COLOR_BGR2RGB)
+    
     def overlayImage(self, image):
         # Get the x, y, alpha values and the overlay image
         x, y = self.image_overlay_position
@@ -545,43 +546,31 @@ class ImageCanvas(tk.Canvas):
         # Crop the overlay to fit the image dimensions
         overlay_cropped = overlay[:overlay_height, :overlay_width]
 
+        # Extract the channels from the overlay
+        overlay_b, overlay_g, overlay_r, overlay_alpha = cv2.split(overlay_cropped)
+        overlay_alpha = overlay_alpha / 255.0 * alpha  # Adjust alpha transparency as in your friend's code
+
         # Get the region of interest (ROI) in the background image
-        roi = image_bgr[y:y+overlay_height, x:x+overlay_width]
+        roi = image_bgr[y:y + overlay_height, x:x + overlay_width]
 
         # Split the channels of the overlay and the ROI
-        overlay_b, overlay_g, overlay_r, overlay_alpha = cv2.split(overlay_cropped)
         background_b, background_g, background_r = cv2.split(roi)
 
         # Perform alpha blending using the alpha channel
-        alpha_mask = overlay_alpha.astype(np.float32) / 255.0
-        print("Alpha Mask:", alpha_mask)
-
-        # Apply the blending formula for each channel, ensure to use np.float32
-        background_b = (1 - alpha_mask) * background_b.astype(np.float32) + alpha_mask * overlay_b.astype(np.float32)
-        background_g = (1 - alpha_mask) * background_g.astype(np.float32) + alpha_mask * overlay_g.astype(np.float32)
-        background_r = (1 - alpha_mask) * background_r.astype(np.float32) + alpha_mask * overlay_r.astype(np.float32)
-
-        # Print the intermediate blended values for each channel
-        print("Blended Blue Channel:", background_b)
-        print("Blended Green Channel:", background_g)
-        print("Blended Red Channel:", background_r)
+        blended_b = (1.0 - overlay_alpha) * background_b + overlay_alpha * overlay_b
+        blended_g = (1.0 - overlay_alpha) * background_g + overlay_alpha * overlay_g
+        blended_r = (1.0 - overlay_alpha) * background_r + overlay_alpha * overlay_r
 
         # Clip the values to be in the valid range (0-255)
-        background_b = np.clip(background_b, 0, 255).astype(np.uint8)
-        background_g = np.clip(background_g, 0, 255).astype(np.uint8)
-        background_r = np.clip(background_r, 0, 255).astype(np.uint8)
-
-        # Print the clipped values
-        print("Clipped Blue Channel:", background_b)
-        print("Clipped Green Channel:", background_g)
-        print("Clipped Red Channel:", background_r)
+        blended_b = np.clip(blended_b, 0, 255).astype(np.uint8)
+        blended_g = np.clip(blended_g, 0, 255).astype(np.uint8)
+        blended_r = np.clip(blended_r, 0, 255).astype(np.uint8)
 
         # Merge the channels back together to form the blended ROI
-        blended_roi = cv2.merge([background_b, background_g, background_r])
-        print("Blended ROI Shape:", blended_roi.shape)
+        blended_roi = cv2.merge([blended_b, blended_g, blended_r])
 
         # Place the blended region back into the original image
-        image_bgr[y:y+overlay_height, x:x+overlay_width] = blended_roi
+        image_bgr[y:y + overlay_height, x:x + overlay_width] = blended_roi
 
         # Convert the result back to RGB
         result = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)

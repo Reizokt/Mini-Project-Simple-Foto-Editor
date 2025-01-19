@@ -73,7 +73,10 @@ vignette = tk.BooleanVar()
 compress_type = tk.StringVar()
 root.state("zoomed")
 root.title("Three Pane Layout")
-
+def overlayChange(e):
+    canvas.image_overlay_alpha = overlay_slider_alpha.get()
+    canvas.image_overlay_position = (overlay_slider_x.get(), overlay_slider_y.get())
+    canvas.show_image(image)
 def change_crop_state():
     global crop
     crop = not crop
@@ -242,6 +245,30 @@ def binaryOperation(operation):
             label_blend.pack(after=frame_binary)
             alpha_slider.pack(after=label_blend)
             return
+        elif operation == "MATCH":
+            if canvas.image_match is None:
+                label_canvas2.pack()
+                canvas2.pack()
+            canvas.image_match = image2
+            canvas2.show_image(canvas.image_match)
+            canvas.show_image(image)
+        elif operation == "TEMPLATE":
+            label_canvas2.pack()
+            canvas2.pack()
+            canvas.image_template = image2
+            canvas2.show_image(image2)
+            canvas.show_image(image)
+        elif operation == "OVERLAY":
+            canvas.image_overlay = image2
+            label_overlay.pack(after=frame_binary)
+            overlay_slider_alpha.pack(after=label_overlay)
+            label_overlay_x.pack(after=overlay_slider_alpha)
+            overlay_slider_x.pack(after=label_overlay_x)
+            label_overlay_y.pack(after=overlay_slider_x)
+            overlay_slider_y.pack(after=label_overlay_y)
+            canvas.image_overlay_position= (overlay_slider_x.get(), overlay_slider_y.get())
+            canvas.image_overlay_alpha = overlay_slider_alpha.get()
+            canvas.show_image(image)
         elif image2 is not None:
             image2 = cv2.resize(image2, (image.shape[1], image.shape[0]))
             image = operations[operation](image, image2)
@@ -298,6 +325,16 @@ def resetTransformations():
     alpha_slider.set(0.5)
     label_blend.pack_forget()
     alpha_slider.pack_forget()
+
+    label_overlay.pack_forget()
+    overlay_slider_alpha.pack_forget()
+    overlay_slider_alpha.set(1)
+    label_overlay_x.pack_forget()
+    overlay_slider_x.pack_forget()
+    overlay_slider_x.set(0)
+    label_overlay_y.pack_forget()
+    overlay_slider_y.pack_forget()
+    overlay_slider_y.set(0)
     canvas.show_image(image)
 
 def alphaChange(event):
@@ -411,7 +448,7 @@ ttk.Label(frame3, text="Right Menu", background="lightgreen").pack(pady=10)
 canvas = ImageCanvas(frame2)
         
 
-label1 = ttk.Label(frame2, text="Image 1", background="white")
+label1 = ttk.Label(frame2, text="Image", background="white", font=("Arial", 12, "bold"), foreground="black")
 label1.pack()
 button = ttk.Button(frame2, text="Import Image", command=importImageClick)
 button.pack()
@@ -615,7 +652,8 @@ ttk.Button(frame_binary, text="OR", command=lambda : binaryOperation("OR")).grid
 ttk.Button(frame_binary, text="XOR", command=lambda : binaryOperation("XOR")).grid(column=2, row=0)
 ttk.Button(frame_binary, text="NOT", command=lambda : binaryOperation("NOT")).grid(column=3, row=0)
 frame_binary.pack()
-ttk.Button(frame_binary, text="BLEND", command=lambda : binaryOperation("BLEND")).grid(column=0, row=1, columnspan=4)
+ttk.Button(frame_binary, text="BLEND", command=lambda : binaryOperation("BLEND")).grid(column=0, row=1, columnspan=2, sticky="nsew")
+ttk.Button(frame_binary, text="Overlay", command=lambda : binaryOperation("OVERLAY")).grid(column=2, row=1, columnspan=2, sticky="nsew")
 label_blend = ttk.Label(frame3, text="Image Blend Alpha: 0.5")
 label_blend.pack_forget()
 alpha_slider = ttk.Scale(frame3, 
@@ -624,6 +662,33 @@ alpha_slider = ttk.Scale(frame3,
 alpha_slider.bind("<ButtonRelease-1>", alphaChange)
 alpha_slider.set(0.5)
 alpha_slider.pack_forget()
+
+label_overlay = ttk.Label(frame3, text="Image overlay Alpha: 1")
+label_overlay.pack_forget()
+overlay_slider_alpha = ttk.Scale(frame3, 
+                        from_=0, to=1,
+                        orient=tk.HORIZONTAL, command=lambda e: label_overlay.config(text = f"Image overlay Alpha: {float(e):.2f}"))
+overlay_slider_alpha.bind("<ButtonRelease-1>", overlayChange)
+overlay_slider_alpha.set(1)
+overlay_slider_alpha.pack_forget()
+label_overlay_x = ttk.Label(frame3, text="Overlay X: 0")
+label_overlay_x.pack_forget()
+overlay_slider_x = ttk.Scale(frame3,
+                        from_=0, to=1,
+                        orient=tk.HORIZONTAL, command=lambda e: label_overlay_x.config(text = f"Overlay X: {float(e):.2f}"))
+overlay_slider_x.bind("<ButtonRelease-1>", overlayChange)
+overlay_slider_x.set(0)
+overlay_slider_x.pack_forget()
+label_overlay_y = ttk.Label(frame3, text="Overlay Y: 0")
+label_overlay_y.pack_forget()
+overlay_slider_y = ttk.Scale(frame3,
+                        from_=0, to=1,
+                        orient=tk.HORIZONTAL, command=lambda e: label_overlay_y.config(text = f"Overlay Y: {float(e):.2f}"))
+overlay_slider_y.bind("<ButtonRelease-1>", overlayChange)
+overlay_slider_y.set(0)
+overlay_slider_y.pack_forget()
+
+
 
 ttk.Label(frame3, text="Toggle crop", background="lightgreen").pack()
 button_crop = ttk.Button(frame3, text="Crop", command=change_crop_state)
@@ -695,5 +760,30 @@ button_gaussian.grid(column=1, row=0)
 button_median = ttk.Button(frame_image_restoration, text="Inpainting", command=lambda : applyRestore("Inpainting"))
 button_median.grid(column=2, row=0)
 frame_image_restoration.pack()
-print(canvas.restoration)                       
+ttk.Label(frame3, text="Morphological operations", background="lightgreen").pack()
+
+frame_morph = ttk.Frame(frame3)
+frame_morph.columnconfigure(0, weight=1)
+frame_morph.columnconfigure(1, weight=1)
+frame_morph.columnconfigure(2, weight=1)
+
+def imageMorph(operation):
+    morphs = canvas.image_morph
+    if operation not in morphs:
+        morphs.append(operation)
+    else:
+        morphs.remove(operation)
+    canvas.image_morph = morphs
+    canvas.show_image(image)
+ttk.Button(frame_morph, text="Dilation", command=lambda : imageMorph("Dilation")).grid(column=0, row=0, sticky="nsew")
+ttk.Button(frame_morph, text="Erosion", command=lambda : imageMorph("Erosion")).grid(column=1, row=0, sticky="nsew")
+ttk.Button(frame_morph, text="Opening", command=lambda : imageMorph("Opening")).grid(column=2, row=0, sticky="nsew")
+ttk.Button(frame_morph, text="Closing", command=lambda : imageMorph("Closing")).grid(column=0, row=1)
+ttk.Button(frame_morph, text="Extract Boundary", command=lambda : imageMorph("Boundary Extraction")).grid(column=1, row=1)
+ttk.Button(frame_morph, text="Skeletonize", command=lambda : imageMorph("Skeletonize")).grid(column=2, row=1)
+frame_morph.pack()
+ttk.Button(frame3, text="Match Image", command=lambda:binaryOperation("MATCH")).pack()
+label_canvas2 = ttk.Label(frame2, text="Image 2", background="white", foreground="black")
+canvas2 = ImageCanvas(frame2)
+ttk.Button(frame3, text="Match Template", command=lambda:binaryOperation("TEMPLATE")).pack()
 root.mainloop()

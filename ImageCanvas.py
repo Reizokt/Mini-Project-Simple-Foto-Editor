@@ -30,6 +30,13 @@ class ImageCanvas(tk.Canvas):
         self.histogram = False
         self.restoration = []
         self.gamma = 1
+        self.image_morph = []
+        self.image_match = None
+        self.matched_image = None
+        self.image_template = None
+        self.image_overlay = None
+        self.image_overlay_alpha = 1
+        self.image_overlay_position = (0,0)
     def show_image(self, img=None):
         self.delete("all")
         image = img
@@ -49,6 +56,8 @@ class ImageCanvas(tk.Canvas):
             print(image)
             T = np.array([[1,0,self.translate[0]],[0,1,self.translate[1]]],dtype=np.float32)
             image = cv2.warpAffine(image, T, (width, height))
+        if self.image_overlay is not None:
+            image = self.overlayImage(image)
         if self.image_blend is not None:
             self.image_blend = cv2.cvtColor(self.image_blend, cv2.COLOR_BGR2RGB)
             overlay = cv2.resize(self.image_blend, (width, height))
@@ -130,6 +139,18 @@ class ImageCanvas(tk.Canvas):
             print(self.restoration)
             for restoration in self.restoration:
                 image = self.image_restoration(image, restoration)
+        if len(self.image_morph) > 0:
+            if not self.isGrayScale:
+                self.isGrayScale = True
+                image = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+            _, image = cv2.threshold(image, 127, 255, cv2.THRESH_BINARY)
+            for morph in self.image_morph:
+                image = self.image_morphing(image, morph)
+
+        if self.image_match is not None:
+            image = self.imageMatch(image)
+        if self.image_template is not None:
+            image = self.templateMatch(image)
         height, width = image.shape[0], image.shape[1]
         ratio = height / width
         new_width = width
@@ -167,8 +188,6 @@ class ImageCanvas(tk.Canvas):
         elif compression_type == "RLE":
             image_cv2 = self.compressRLE(image_cv2)
             cv2.imwrite(path, image_cv2)
-            
-    
     def __repr__(self):
         return (
             f"{self.__class__.__name__}("+
@@ -323,6 +342,12 @@ class ImageCanvas(tk.Canvas):
         self.resize = (0,0)
         self.image_blend = None
         self.image_blend_alpha = 0.5
+        self.image_template = None
+        self.image_match = None
+        self.matched_image = None
+        self.image_overlay = None
+        self.image_overlay_alpha = 1
+        self.image_overlay_position = (0,0)
     def applyBlurFilter(self, image, blur_filter):
         filtered_image = None
         if blur_filter == "Mean Filter":
@@ -399,3 +424,199 @@ class ImageCanvas(tk.Canvas):
         corrected_image = np.power(image_normalized, self.gamma)
         corrected_image = np.uint8(corrected_image * 255)
         return corrected_image
+    def image_morphing(self, image, operation):
+        
+        kernel_size = 5
+        kernel = np.ones((kernel_size, kernel_size), np.uint8)
+        processed_image = None
+        def skeletonize(image):
+            if not self.isGrayScale:
+                self.isGrayScale = True
+                image = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+            # Ensure binary image (0 and 255)
+            image = image.copy()
+            image[image > 0] = 1
+            skeleton = np.zeros(image.shape, np.uint8)
+            
+            # Get structuring elements for the morphological operations
+            kernel = cv2.getStructuringElement(cv2.MORPH_CROSS, (3,3))
+            
+            while True:
+                # Step 1: Erode the image
+                eroded = cv2.erode(image, kernel)
+                
+                # Step 2: Open the eroded image
+                opened = cv2.morphologyEx(eroded, cv2.MORPH_OPEN, kernel)
+                            
+                # Step 3: Subtract to get endpoints
+                subset = eroded - opened
+                
+                # Step 4: Add endpoints to skeleton
+                skeleton = cv2.bitwise_or(skeleton, subset)
+                
+                # Step 5: Erode the original image for next iteration
+                image = eroded.copy()
+                
+                # Step 6: Check if image has been completely eroded
+                if cv2.countNonZero(image) == 0:
+                    break
+            
+            # Convert back to binary image with values 0 and 255
+            skeleton = skeleton * 255
+            return skeleton
+        if operation == "Dilation":
+            processed_image = cv2.dilate(image, kernel, iterations=1)
+        elif operation == "Erosion":
+            processed_image = cv2.erode(image, kernel, iterations=1)
+        elif operation == "Opening":
+            processed_image = cv2.morphologyEx(image, cv2.MORPH_OPEN, kernel)
+        elif operation == "Closing":
+            processed_image = cv2.morphologyEx(image, cv2.MORPH_CLOSE, kernel)
+        elif operation == "Boundary Extraction":
+            eroded = cv2.erode(image, kernel, iterations=1)
+            processed_image = image - eroded
+        elif operation == "Skeletonize":
+            processed_image = skeletonize(image)
+            print(processed_image)
+        return processed_image
+    def imageMatch(self, image):
+        image1 = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+        image2 = cv2.cvtColor(self.image_match, cv2.COLOR_BGR2GRAY)
+        image2_rgb = cv2.cvtColor(self.image_match, cv2.COLOR_BGR2RGB)
+        height1, width1 = image1.shape
+        height2, width2 = image2.shape
+        if height1 != height2:
+            image2 = cv2.resize(image2, (width2, height1))
+            image2_rgb = cv2.resize(image2_rgb, (width2, height1))
+        sift = cv2.SIFT_create()
+        keypoints1, descriptors1 = sift.detectAndCompute(image1, None)
+        keypoints2, descriptors2 = sift.detectAndCompute(image2, None)
+        image1_with_keypoints = cv2.drawKeypoints(image, keypoints1, None)
+        image2_with_keypoints = cv2.drawKeypoints(image2_rgb, keypoints2, None)
+        self.matched_image = image2_with_keypoints
+        return image1_with_keypoints
+    def templateMatch(self, image):
+        image_large = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+        image_template = cv2.cvtColor(self.image_template, cv2.COLOR_BGR2GRAY)
+        cv2.imshow("template", self.image_template)
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
+        result = cv2.matchTemplate(image_large, image_template, cv2.TM_CCOEFF_NORMED)
+        min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
+        if max_loc == (0, 0):
+            print("Template found at the top-left corner!")
+        else:
+            print("Template not found at the top-left corner.")
+        top_left = max_loc
+        h, w = image_template.shape
+        image_matched = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+        cv2.rectangle(image_matched, top_left, (top_left[0] + w, top_left[1] + h), (0, 255, 0), 3)
+        print(f"Top-left: {top_left}, Width: {w}, Height: {h}")
+        print(f"Image shape: {image.shape}")
+        print(f"Template shape: {image_template.shape}")
+        return cv2.cvtColor(image_matched, cv2.COLOR_BGR2RGB)
+    def overlayImage(self, image):
+        # Get the x, y, alpha values and the overlay image
+        x, y = self.image_overlay_position
+        alpha = self.image_overlay_alpha
+        overlay = self.remove_background(self.image_overlay)  # This gives RGBA output
+
+        # Convert the RGB input image to BGR
+        image_bgr = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+
+        # Get the size of the image
+        height, width = image_bgr.shape[:2]
+
+        # Convert x, y to pixel coordinates
+        x = int(x * width)
+        y = int(y * height)
+
+        # Get the overlay image size
+        overlay_height, overlay_width = overlay.shape[:2]
+
+        # Calculate the region of interest (ROI) in the background image
+        overlay_width = min(overlay_width, width - x)
+        overlay_height = min(overlay_height, height - y)
+
+        # Ensure the overlay image does not exceed the boundaries of the background
+        if overlay_width <= 0 or overlay_height <= 0:
+            return image  # No overlay to apply if it's out of bounds
+
+        # Crop the overlay to fit the image dimensions
+        overlay_cropped = overlay[:overlay_height, :overlay_width]
+
+        # Get the region of interest (ROI) in the background image
+        roi = image_bgr[y:y+overlay_height, x:x+overlay_width]
+
+        # Split the channels of the overlay and the ROI
+        overlay_b, overlay_g, overlay_r, overlay_alpha = cv2.split(overlay_cropped)
+        background_b, background_g, background_r = cv2.split(roi)
+
+        # Perform alpha blending using the alpha channel
+        alpha_mask = overlay_alpha.astype(np.float32) / 255.0
+        print("Alpha Mask:", alpha_mask)
+
+        # Apply the blending formula for each channel, ensure to use np.float32
+        background_b = (1 - alpha_mask) * background_b.astype(np.float32) + alpha_mask * overlay_b.astype(np.float32)
+        background_g = (1 - alpha_mask) * background_g.astype(np.float32) + alpha_mask * overlay_g.astype(np.float32)
+        background_r = (1 - alpha_mask) * background_r.astype(np.float32) + alpha_mask * overlay_r.astype(np.float32)
+
+        # Print the intermediate blended values for each channel
+        print("Blended Blue Channel:", background_b)
+        print("Blended Green Channel:", background_g)
+        print("Blended Red Channel:", background_r)
+
+        # Clip the values to be in the valid range (0-255)
+        background_b = np.clip(background_b, 0, 255).astype(np.uint8)
+        background_g = np.clip(background_g, 0, 255).astype(np.uint8)
+        background_r = np.clip(background_r, 0, 255).astype(np.uint8)
+
+        # Print the clipped values
+        print("Clipped Blue Channel:", background_b)
+        print("Clipped Green Channel:", background_g)
+        print("Clipped Red Channel:", background_r)
+
+        # Merge the channels back together to form the blended ROI
+        blended_roi = cv2.merge([background_b, background_g, background_r])
+        print("Blended ROI Shape:", blended_roi.shape)
+
+        # Place the blended region back into the original image
+        image_bgr[y:y+overlay_height, x:x+overlay_width] = blended_roi
+
+        # Convert the result back to RGB
+        result = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
+
+        return result
+
+    def remove_background(self, image):
+        # Create a mask
+        mask = np.zeros(image.shape[:2], np.uint8)
+        
+        # Create temporary arrays for the GrabCut algorithm
+        bgdModel = np.zeros((1,65), np.float64)
+        fgdModel = np.zeros((1,65), np.float64)
+        
+        # Create a rectangle around the center of the image
+        rect_scale = 0.8  # Scale factor for the rectangle size
+        height, width = image.shape[:2]
+        margin_x = int(width * (1 - rect_scale) / 2)
+        margin_y = int(height * (1 - rect_scale) / 2)
+        rect = (margin_x, margin_y, int(width * rect_scale), int(height * rect_scale))
+        
+        # Apply GrabCut
+        cv2.grabCut(image, mask, rect, bgdModel, fgdModel, 5, cv2.GC_INIT_WITH_RECT)
+        
+        # Create mask for probable and definite foreground
+        mask2 = np.where((mask==2)|(mask==0), 0, 1).astype('uint8')
+        
+        # Apply the mask to get the foreground
+        foreground = image * mask2[:, :, np.newaxis]
+        
+        # Create alpha channel
+        alpha = mask2 * 255
+        
+        # Add alpha channel to the foreground
+        b, g, r = cv2.split(foreground)
+        rgba = cv2.merge([b, g, r, alpha])
+        
+        return rgba
